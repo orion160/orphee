@@ -1,0 +1,10 @@
+---
+Checks:
+    - bugprone-*
+    - cppcoreguidelines-*
+    - modernize-*
+    - -modernize-use-trailing-return-type
+    - performance-*
+    - readability-*
+    - -readability-identifier-length
+FormatStyle: file
