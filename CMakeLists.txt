@@ -9,6 +9,8 @@ find_package(sdl2 REQUIRED CONFIG)
 find_package(Vulkan REQUIRED)
 find_package(spdlog REQUIRED CONFIG)
 
+add_subdirectory(imgui)
+
 add_subdirectory(lib)
 add_subdirectory(include)
 

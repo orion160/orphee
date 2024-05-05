@@ -1,9 +1,8 @@
 #pragma once
 
-#include <functional>
 #include <optional>
 
-#include <orphee/vkDefs.hpp>
+#include <orphee/vulkan.hpp>
 
 namespace orphee {
 struct vkInit {
@@ -14,38 +13,60 @@ struct vkInit {
   CharSet extensions;
 };
 
+/*
+SELECTOR API
+
+
+declaration
+template <typename S>
+concept Selector = requires(S f, "needed-info-arg") {
+  { f("needed-info-arg") } -> std::same_as<"?">;
+};
+
+implementation
+
+R createXXX(Selector auto && s) {}
+*/
+
 class vkManager {
 public:
-  [[nodiscard]] vkManager(vkInit init);
+  vkManager(vkInit init);
+  vkManager(const vkManager &) = delete;
+  vkManager(vkManager &&) noexcept = default;
+  vkManager &operator=(const vkManager &) = delete;
+  vkManager &operator=(vkManager &&) = default;
+  ~vkManager();
 
-  [[nodiscard]] vk::raii::SurfaceKHR createSurface(
-      std::function<vk::raii::SurfaceKHR(const vk::raii::Instance &)> F);
+  // TODO: refactor into selector API
+  [[nodiscard]] std::optional<Device>
+  createDevice(const DeviceRequirements &r) const;
 
-  [[nodiscard]] std::optional<vkDeviceDesc>
-  createDevice(std::function<vkDeviceReqs()> F);
+  [[nodiscard]] static std::optional<uint32_t>
+  findMemoryType(std::span<vk::MemoryType> types, uint32_t typeFilter,
+                 vk::MemoryPropertyFlags properties);
+
+  vkInit initInfo;
+  vk::raii::Context context;
+  vk::raii::Instance instance;
 
 private:
-  using QSCreate = std::unordered_map<uint32_t, std::vector<std::string>>;
+  using QueueCreate = std::unordered_map<uint32_t, std::vector<std::string>>;
 
   [[nodiscard]] vk::raii::Instance createInstance();
 
   [[nodiscard]] static bool checkInstanceVersion(uint32_t target,
                                                  uint32_t instance);
 
-  [[nodiscard]] bool checkInstanceLayers(const CharSet &layers);
+  [[nodiscard]] bool checkInstanceLayers(const CharSet &layers) const;
 
-  [[nodiscard]] bool checkInstanceExtensions(const CharSet &extensions);
+  [[nodiscard]] bool checkInstanceExtensions(const CharSet &extensions) const;
 
   [[nodiscard]] static bool
   checkPhysicalDeviceExtensions(const vk::raii::PhysicalDevice &device,
                                 const CharSet &extensions);
 
-  [[nodiscard]] static QSCreate
+  [[nodiscard]] static QueueCreate
   obtainPhysicalDeviceQueues(const vk::PhysicalDevice &device,
-                             const std::vector<QFDesc> &qds);
-
-  vkInit mInit;
-  vk::raii::Context mContext;
-  vk::raii::Instance mInstance;
+                             std::span<const QueueFamilyDescriptor> qds);
 };
 } // namespace orphee

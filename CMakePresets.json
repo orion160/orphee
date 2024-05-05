@@ -38,6 +38,10 @@
         "CMAKE_C_COMPILER": "cl",
         "CMAKE_CXX_COMPILER": "cl",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      },
+      "environment": {
+        "CFLAGS": "/fsanitize=address",
+        "CXXFLAGS": "/fsanitize=address"
       }
     }
   ]

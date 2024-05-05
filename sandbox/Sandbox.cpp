@@ -1,164 +1,25 @@
-#include <SDL_video.h>
-#include <orphee/App.hpp>
-#include <orphee/RenderStage.hpp>
-#include <orphee/vkManager.hpp>
-
 #include <cstdint>
-#include <exception>
 #include <iostream>
 #include <memory>
+#include <string>
+
+#include <orphee/orphee.hpp>
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
-class SanboxStage : public orphee::RenderStage {
+class Sandbox {
 public:
-  SanboxStage(const orphee::vkDeviceDesc &dd,
-              std::unique_ptr<orphee::vkSwapChainDesc> sd)
-      : mDevice{dd.device}, mSD{std::move(sd)},
-        mSwapchainImages{mSD->swapchain.getImages()}, mG0{dd.queues.at("G0")} {
-    vk::CommandPoolCreateInfo commandPoolInfo{
-        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, mG0->fIdx};
-    mCP = std::make_unique<vk::raii::CommandPool>(
-        mDevice->createCommandPool(commandPoolInfo));
-
-    vk::CommandBufferAllocateInfo cmdBufferInfo{
-        *mCP, vk::CommandBufferLevel::ePrimary, 1};
-
-    mCMD = std::make_unique<vk::raii::CommandBuffer>(
-        std::move(mDevice->allocateCommandBuffers(cmdBufferInfo).front()));
-
-    vk::FenceCreateInfo fenceInfo{vk::FenceCreateFlagBits::eSignaled};
-    mDrawFence =
-        std::make_unique<vk::raii::Fence>(mDevice->createFence(fenceInfo));
-
-    vk::SemaphoreCreateInfo swapchainSemaphoreInfo{};
-    mSwapchainSemaphore = std::make_unique<vk::raii::Semaphore>(
-        mDevice->createSemaphore(swapchainSemaphoreInfo));
-
-    vk::SemaphoreCreateInfo renderSemaphoreInfo{};
-    mRenderSemaphore = std::make_unique<vk::raii::Semaphore>(
-        mDevice->createSemaphore(renderSemaphoreInfo));
-  }
-
-  ~SanboxStage() override { mDevice->waitIdle(); }
-
-  void draw() override {
-    const auto wfR = mDevice->waitForFences(**mDrawFence, VK_TRUE, UINT64_MAX);
-    if (wfR != vk::Result::eSuccess) {
-      throw std::runtime_error("Failed to wait for fence");
-    }
-
-    mDevice->resetFences(**mDrawFence);
-
-    const auto aiR =
-        mSD->swapchain.acquireNextImage(UINT64_MAX, **mSwapchainSemaphore);
-    if (aiR.first != vk::Result::eSuccess) {
-      throw std::runtime_error("Failed to acquire next image");
-    }
-
-    const auto imageIndex = aiR.second;
-
-    // record
-    mCMD->reset();
-    vk::CommandBufferBeginInfo beginInfo{
-        vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
-    mCMD->begin(beginInfo);
-
-    // to write
-    vk::ImageMemoryBarrier2 toWriteBarrier{
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eMemoryWrite,
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eGeneral,
-        mG0->fIdx,
-        mG0->fIdx,
-        mSwapchainImages[imageIndex],
-        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
-                                  vk::RemainingMipLevels, 0,
-                                  vk::RemainingArrayLayers}};
-    vk::DependencyInfo toWriteInfo{{}, {}, {}, toWriteBarrier};
-    mCMD->pipelineBarrier2(toWriteInfo);
-
-    vk::ClearColorValue clearColor(
-        std::array<float, 4>{1.0F, 0.0F, 0.0F, 1.0F});
-    vk::ImageSubresourceRange subresourceRange{vk::ImageAspectFlagBits::eColor,
-                                               0, vk::RemainingMipLevels, 0,
-                                               vk::RemainingArrayLayers};
-
-    mCMD->clearColorImage(mSwapchainImages[imageIndex],
-                          vk::ImageLayout::eGeneral, clearColor,
-                          subresourceRange);
-
-    // to present
-    vk::ImageMemoryBarrier2 toPresentBarrier{
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eMemoryWrite,
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
-        vk::ImageLayout::eGeneral,
-        vk::ImageLayout::ePresentSrcKHR,
-        mG0->fIdx,
-        mG0->fIdx,
-        mSwapchainImages[imageIndex],
-        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
-                                  vk::RemainingMipLevels, 0,
-                                  vk::RemainingArrayLayers}};
-    vk::DependencyInfo toPresentInfo{{}, {}, {}, toPresentBarrier};
-    mCMD->pipelineBarrier2(toPresentInfo);
-
-    mCMD->end();
-
-    // submit
-    vk::CommandBufferSubmitInfo cmdSubmitInfo{**mCMD};
-    vk::SemaphoreSubmitInfo swapchainWait{
-        **mSwapchainSemaphore,
-        {},
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput};
-    vk::SemaphoreSubmitInfo renderSignal{
-        **mRenderSemaphore, {}, vk::PipelineStageFlagBits2::eAllGraphics};
-    vk::SubmitInfo2 submitInfo{{}, swapchainWait, cmdSubmitInfo, renderSignal};
-    mG0->queue.submit2(submitInfo, **mDrawFence);
-
-    // present
-    vk::PresentInfoKHR presentInfo{**mRenderSemaphore, *mSD->swapchain,
-                                   imageIndex};
-    const auto pR = mG0->queue.presentKHR(presentInfo);
-    if (pR != vk::Result::eSuccess) {
-      throw std::runtime_error("Failed to present image");
-    }
-  }
-
-  void resize() override {}
-
-private:
-  std::shared_ptr<vk::raii::Device> mDevice;
-  std::unique_ptr<orphee::vkSwapChainDesc> mSD;
-  std::vector<vk::Image> mSwapchainImages;
-  /*
-  On the future algorithms can be done with queue pools - aka mGPool - so work
-  can be coordinated on Graphics queues
-  */
-  std::shared_ptr<orphee::vkQueueDesc> mG0;
-  std::unique_ptr<vk::raii::CommandPool> mCP;
-  std::unique_ptr<vk::raii::CommandBuffer> mCMD;
-  std::unique_ptr<vk::raii::Fence> mDrawFence;
-  std::unique_ptr<vk::raii::Semaphore> mSwapchainSemaphore;
-  std::unique_ptr<vk::raii::Semaphore> mRenderSemaphore;
-};
-
-class Sandbox : public orphee::App {
-public:
-  Sandbox(const std::string sandboxName, uint32_t iWidth = 1080U,
-          uint32_t iHeight = 720U)
-      : mName{sandboxName}, mWidth{iWidth}, mHeight{iHeight} {
+  Sandbox(std::string appName, uint32_t iWidth, uint32_t iHeight)
+      : mName{std::move(appName)} {
+    // SDL
     SDL_Init(SDL_INIT_VIDEO);
-    mWindow = SDL_CreateWindow("VK Sandbox", SDL_WINDOWPOS_UNDEFINED,
+    mWindow = SDL_CreateWindow(appName.c_str(), SDL_WINDOWPOS_UNDEFINED,
                                SDL_WINDOWPOS_UNDEFINED, iWidth, iHeight,
-                               SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN);
+                               SDL_WINDOW_VULKAN | SDL_WINDOW_ALLOW_HIGHDPI |
+                                   SDL_WINDOW_SHOWN);
 
+    // Vulkan
     unsigned int extensionCount{};
     SDL_Vulkan_GetInstanceExtensions(mWindow, &extensionCount, nullptr);
     std::vector<const char *> SDL_extensions(extensionCount);
@@ -171,47 +32,52 @@ public:
     orphee::CharSet vkExtensions;
     vkExtensions.insert(SDL_extensions.begin(), SDL_extensions.end());
 
-    orphee::vkInit oInit{"Sandbox", 0, 0, vkLayers, vkExtensions};
+    mVK = std::make_unique<orphee::vkManager>(
+        orphee::vkInit{mName, 0U, 0U, vkLayers, vkExtensions});
 
-    oVK = std::make_unique<orphee::vkManager>(oInit);
+    // create surface
+    VkSurfaceKHR s{};
+    SDL_Vulkan_CreateSurface(mWindow, *mVK->instance, &s);
+    mSurface = vk::raii::SurfaceKHR{mVK->instance, s};
 
-    mSurface = std::make_unique<vk::raii::SurfaceKHR>(oVK->createSurface(
-        [w = mWindow](const vk::raii::Instance &I) -> vk::raii::SurfaceKHR {
-          VkSurfaceKHR s{};
-          SDL_Vulkan_CreateSurface(w, static_cast<VkInstance>(*I),
-                                   static_cast<VkSurfaceKHR *>(&s));
-          return vk::raii::SurfaceKHR{I, s};
-        }));
+    // create device
+    orphee::CharSet dExtensions;
+    dExtensions.insert({VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME});
 
-    const auto dR = oVK->createDevice([]() -> orphee::vkDeviceReqs {
-      orphee::CharSet ex;
-      ex.insert({VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                 VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME});
+    vk::PhysicalDeviceVulkan13Features f13;
+    f13.setDynamicRendering(vk::True);
+    f13.setSynchronization2(vk::True);
+    orphee::FC f{{}, {}, {}, f13};
 
-      vk::PhysicalDeviceVulkan13Features f13;
-      f13.setDynamicRendering(vk::True);
-      f13.setSynchronization2(vk::True);
-      orphee::FC f{{}, {}, {}, f13};
+    orphee::DeviceRequirements r{dExtensions,
+                                 f,
+                                 {{"G", vk::QueueFlagBits::eGraphics},
+                                  {"C", vk::QueueFlagBits::eCompute},
+                                  {"T", vk::QueueFlagBits::eTransfer}}};
 
-      return {ex,
-              f,
-              {{"G0", vk::QueueFlagBits::eGraphics},
-               {"C0", vk::QueueFlagBits::eCompute},
-               {"T0", vk::QueueFlagBits::eTransfer}}};
-    });
+    auto dR = mVK->createDevice(r);
     if (!dR) {
       throw std::runtime_error("Failed to create device");
     }
+    mDevice = std::make_unique<orphee::Device>(std::move(*dR));
+    mG = &mDevice->queues.at("G");
 
-    mDD = *dR;
-
+    // create swapchain
+    uint32_t minInageCount = 2;
+    int dw{};
+    int dh{};
+    SDL_Vulkan_GetDrawableSize(mWindow, &dw, &dh);
+    vk::Extent2D swapchainExtent{static_cast<uint32_t>(dw),
+                                 static_cast<uint32_t>(dh)};
+    vk::Format swapchainFormat{vk::Format::eB8G8R8A8Unorm};
     vk::SwapchainCreateInfoKHR swapchainInfo{
         {},
         *mSurface,
-        2,
-        vk::Format::eB8G8R8A8Unorm,
+        minInageCount,
+        swapchainFormat,
         vk::ColorSpaceKHR::eSrgbNonlinear,
-        {iWidth, iHeight},
+        swapchainExtent,
         1,
         vk::ImageUsageFlagBits::eColorAttachment |
             vk::ImageUsageFlagBits::eTransferDst,
@@ -222,50 +88,163 @@ public:
         vk::PresentModeKHR::eFifo,
         VK_TRUE,
         nullptr};
-    auto swapchain = mDD.device->createSwapchainKHR(swapchainInfo);
+    auto swapchain = mDevice->device.createSwapchainKHR(swapchainInfo);
 
-    mStage = std::make_unique<SanboxStage>(
-        mDD, std::make_unique<orphee::vkSwapChainDesc>(std::move(swapchain)));
+    auto swapchainImages = swapchain.getImages();
+    std::vector<vk::raii::ImageView> swapchainImageViews;
+    swapchainImageViews.reserve(swapchainImages.size());
+
+    for (const auto &image : swapchainImages) {
+      swapchainImageViews.push_back(mDevice->device.createImageView(
+          {{},
+           image,
+           vk::ImageViewType::e2D,
+           swapchainFormat,
+           {},
+           {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}}));
+    }
+
+    mSwapchain = std::make_unique<orphee::Swapchain>(
+        std::move(swapchain), swapchainImages, std::move(swapchainImageViews),
+        swapchainFormat, swapchainExtent);
+
+    // draw setup
+    mCP = mDevice->device.createCommandPool(
+        {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, mG->fIdx});
+    mCMD = std::move(
+        mDevice->device
+            .allocateCommandBuffers({mCP, vk::CommandBufferLevel::ePrimary, 1})
+            .front());
+
+    mDrawFence =
+        mDevice->device.createFence({vk::FenceCreateFlagBits::eSignaled});
+    mImageAvailable = mDevice->device.createSemaphore({});
+    mRenderFinished = mDevice->device.createSemaphore({});
   }
 
-  ~Sandbox() override {
+  ~Sandbox() {
+    mDevice->device.waitIdle();
+    // SDL
     SDL_DestroyWindow(mWindow);
     SDL_Quit();
   }
 
-  void run() override {
-    SDL_Event event;
-    bool isRunning{true};
+  void run() {
+    bool isRunning = true;
 
     while (isRunning) {
+      SDL_Event event;
       while (SDL_PollEvent(&event) != 0) {
         if (event.type == SDL_QUIT) {
           isRunning = false;
         }
       }
-      mStage->draw();
+
+      const auto wfR =
+          mDevice->device.waitForFences(*mDrawFence, vk::True, UINT64_MAX);
+      if (wfR != vk::Result::eSuccess) {
+        throw std::runtime_error("Failed to wait for fence");
+      }
+
+      mDevice->device.resetFences(*mDrawFence);
+
+      const auto aiR =
+          mSwapchain->swapchain.acquireNextImage(UINT64_MAX, mImageAvailable);
+      if (aiR.first != vk::Result::eSuccess) {
+        throw std::runtime_error("Failed to acquire next image");
+      }
+      const auto imageIndex = aiR.second;
+
+      vk::CommandBufferBeginInfo beginInfo{
+          vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+      mCMD.begin(beginInfo);
+
+      vk::ImageMemoryBarrier2 toWriteBarrier{
+          vk::PipelineStageFlagBits2::eAllCommands,
+          vk::AccessFlagBits2::eMemoryWrite,
+          vk::PipelineStageFlagBits2::eAllCommands,
+          vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+          vk::ImageLayout::eUndefined,
+          vk::ImageLayout::eGeneral,
+          mG->fIdx,
+          mG->fIdx,
+          mSwapchain->images[imageIndex],
+          vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
+                                    vk::RemainingMipLevels, 0,
+                                    vk::RemainingArrayLayers}};
+      vk::DependencyInfo toWriteInfo{{}, {}, {}, toWriteBarrier};
+      mCMD.pipelineBarrier2(toWriteInfo);
+
+      mCMD.clearColorImage(
+          mSwapchain->images[imageIndex],
+          vk::ImageLayout::eGeneral,
+          vk::ClearColorValue{std::array<float, 4>{1.0F, 0.0F, 0.0F, 1.0F}},
+          vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
+                                    vk::RemainingMipLevels, 0,
+                                    vk::RemainingArrayLayers});
+
+      vk::ImageMemoryBarrier2 toPresentBarrier{
+          vk::PipelineStageFlagBits2::eAllCommands,
+          vk::AccessFlagBits2::eMemoryWrite,
+          vk::PipelineStageFlagBits2::eAllCommands,
+          vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+          vk::ImageLayout::eGeneral,
+          vk::ImageLayout::ePresentSrcKHR,
+          mG->fIdx,
+          mG->fIdx,
+          mSwapchain->images[imageIndex],
+          vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
+                                    vk::RemainingMipLevels, 0,
+                                    vk::RemainingArrayLayers}};
+      vk::DependencyInfo toPresentInfo{{}, {}, {}, toPresentBarrier};
+      mCMD.pipelineBarrier2(toPresentInfo);
+
+      mCMD.end();
+
+      vk::CommandBufferSubmitInfo cmdSubmitInfo{*mCMD};
+      vk::SemaphoreSubmitInfo swapchainWait{
+          *mImageAvailable, {}, vk::PipelineStageFlagBits2::eAllCommands};
+      vk::SemaphoreSubmitInfo renderSignal{
+          *mRenderFinished, {}, vk::PipelineStageFlagBits2::eAllCommands};
+      vk::SubmitInfo2 submitInfo{
+          {}, swapchainWait, cmdSubmitInfo, renderSignal};
+
+      mG->queue.submit2(submitInfo, *mDrawFence);
+
+      const auto pR = mG->queue.presentKHR(
+          {*mRenderFinished, *mSwapchain->swapchain, imageIndex});
+      if (pR != vk::Result::eSuccess) {
+        throw std::runtime_error("Failed to present image");
+      }
     }
   }
 
 private:
-  // State
+  // App
   std::string mName;
-  uint32_t mWidth;
-  uint32_t mHeight;
-
   // SDL
   SDL_Window *mWindow;
+  // Vulkan
+  std::unique_ptr<orphee::vkManager> mVK;
+  vk::raii::SurfaceKHR mSurface{nullptr};
+  std::unique_ptr<orphee::Device> mDevice;
+  orphee::Queue *mG;
+  std::unique_ptr<orphee::Swapchain> mSwapchain;
 
-  // Graphics
-  std::unique_ptr<orphee::vkManager> oVK;
-  std::unique_ptr<vk::raii::SurfaceKHR> mSurface;
-  orphee::vkDeviceDesc mDD;
-  std::unique_ptr<orphee::RenderStage> mStage;
+  // ImGui
+  vk::raii::DescriptorPool imguiDescriptorPool{nullptr};
+
+  // render
+  vk::raii::CommandPool mCP{nullptr};
+  vk::raii::CommandBuffer mCMD{nullptr};
+  vk::raii::Fence mDrawFence{nullptr};
+  vk::raii::Semaphore mImageAvailable{nullptr};
+  vk::raii::Semaphore mRenderFinished{nullptr};
 };
 
 int main(int argc, char **argv) {
   try {
-    Sandbox sandbox{"Sandbox"};
+    Sandbox sandbox{"Sandbox", 1080U, 720U};
     sandbox.run();
   } catch (const std::exception &e) {
     std::cout << e.what() << std::endl;

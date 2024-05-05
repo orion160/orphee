@@ -1,37 +1,31 @@
-#include <orphee/OrpheeDefs.hpp>
+#include <orphee/orphee.hpp>
 #include <orphee/vkManager.hpp>
 
-#include <memory>
-#include <utility>
-
 #include <spdlog/spdlog.h>
-#include <vulkan/vulkan_raii.hpp>
 
 namespace orphee {
 vkManager::vkManager(vkInit init)
-    : mInit{std::move(init)}, mInstance{createInstance()} {}
+    : initInfo{std::move(init)}, instance{createInstance()} {}
 
-vk::raii::SurfaceKHR vkManager::createSurface(
-    std::function<vk::raii::SurfaceKHR(const vk::raii::Instance &)> F) {
-  return F(mInstance);
-}
+vkManager::~vkManager() { spdlog::info("Destroying Vulkan manager..."); }
 
-std::optional<vkDeviceDesc>
-vkManager::createDevice(std::function<vkDeviceReqs()> F) {
-  const auto r = F();
-
-  for (const auto &physicalDevice : mInstance.enumeratePhysicalDevices()) {
+std::optional<Device>
+vkManager::createDevice(const DeviceRequirements &r) const {
+  for (const auto &physicalDevice : instance.enumeratePhysicalDevices()) {
+    // query extensions
     const auto cx = checkPhysicalDeviceExtensions(physicalDevice, r.extensions);
     if (!cx) {
       continue;
     }
 
+    // query queues
     const auto qMap =
         obtainPhysicalDeviceQueues(physicalDevice, r.queueDescriptors);
-
     if (qMap.empty()) {
       continue;
     }
+
+    // query match!
 
     std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
     for (const auto &[idx, _] : qMap) {
@@ -52,14 +46,27 @@ vkManager::createDevice(std::function<vkDeviceReqs()> F) {
     QS queues;
     for (const auto &[idx, tags] : qMap) {
       for (const auto &tag : tags) {
-        queues[tag] =
-            std::make_shared<vkQueueDesc>(vkQueueDesc{idx, d.getQueue(idx, 0)});
+        // TODO [QUEUE-CREATE]
+        queues.emplace(tag, Queue{d.getQueue(idx, 0)});
+        spdlog::info("Created queue \"{}\" from queue family {} at index {}",
+                     tag, idx, 0);
       }
     }
 
-    return vkDeviceDesc{
-        std::make_shared<vk::raii::PhysicalDevice>(physicalDevice),
-        std::make_shared<vk::raii::Device>(std::move(d)), queues};
+    return Device{physicalDevice, std::move(d), queues};
+  }
+
+  return {};
+}
+
+std::optional<uint32_t>
+vkManager::findMemoryType(std::span<vk::MemoryType> types, uint32_t typeFilter,
+                          vk::MemoryPropertyFlags properties) {
+  for (uint32_t i = 0; const auto &t : types) {
+    if (((typeFilter & (1U << i)) != 0U) &&
+        (t.propertyFlags & properties) == properties) {
+      return i;
+    }
   }
 
   return {};
@@ -67,34 +74,36 @@ vkManager::createDevice(std::function<vkDeviceReqs()> F) {
 
 vk::raii::Instance vkManager::createInstance() {
   const auto vc = checkInstanceVersion(ORPHEE_VK_VERSION,
-                                       mContext.enumerateInstanceVersion());
+                                       context.enumerateInstanceVersion());
   if (!vc) {
     throw std::runtime_error("Vulkan version mismatch");
   }
 
-  const auto lc = checkInstanceLayers(mInit.layers);
+  const auto lc = checkInstanceLayers(initInfo.layers);
   if (!lc) {
     throw std::runtime_error("Vulkan layers mismatch");
   }
 
-  const auto ec = checkInstanceExtensions(mInit.extensions);
+  const auto ec = checkInstanceExtensions(initInfo.extensions);
   if (!ec) {
     throw std::runtime_error("Vulkan extensions mismatch");
   }
 
   vk::ApplicationInfo appInfo{
-      mInit.appName.c_str(),
-      VK_MAKE_API_VERSION(0, mInit.appVersionMajor, mInit.appVersionMinor, 0),
+      initInfo.appName.c_str(),
+      VK_MAKE_API_VERSION(0, initInfo.appVersionMajor, initInfo.appVersionMinor,
+                          0),
       ORPHEE_NAME,
       VK_MAKE_API_VERSION(0, ORPHEE_VERSION_MAJOR, ORPHEE_VERSION_MINOR, 0),
       ORPHEE_VK_VERSION};
 
-  std::vector<const char *> layers(mInit.layers.begin(), mInit.layers.end());
-  std::vector<const char *> extensions(mInit.extensions.begin(),
-                                       mInit.extensions.end());
+  std::vector<const char *> layers(initInfo.layers.begin(),
+                                   initInfo.layers.end());
+  std::vector<const char *> extensions(initInfo.extensions.begin(),
+                                       initInfo.extensions.end());
   vk::InstanceCreateInfo instanceInfo{{}, &appInfo, layers, extensions};
 
-  return mContext.createInstance(instanceInfo);
+  return context.createInstance(instanceInfo);
 }
 
 bool vkManager::checkInstanceVersion(uint32_t target, uint32_t instance) {
@@ -120,10 +129,10 @@ bool vkManager::checkInstanceVersion(uint32_t target, uint32_t instance) {
   return true;
 }
 
-bool vkManager::checkInstanceLayers(const CharSet &layers) {
+bool vkManager::checkInstanceLayers(const CharSet &layers) const {
   spdlog::info("Checking layers...");
 
-  const auto availableLayers{mContext.enumerateInstanceLayerProperties()};
+  const auto availableLayers{context.enumerateInstanceLayerProperties()};
   spdlog::info("Found {} available layers", availableLayers.size());
 
   std::unordered_set<std::string> names;
@@ -145,11 +154,11 @@ bool vkManager::checkInstanceLayers(const CharSet &layers) {
   return foundAll;
 }
 
-bool vkManager::checkInstanceExtensions(const CharSet &extensions) {
+bool vkManager::checkInstanceExtensions(const CharSet &extensions) const {
   spdlog::info("Checking extensions...");
 
   const auto availableExtensions{
-      mContext.enumerateInstanceExtensionProperties()};
+      context.enumerateInstanceExtensionProperties()};
   spdlog::info("Found {} available extensions", availableExtensions.size());
 
   std::unordered_set<std::string> names;
@@ -197,10 +206,10 @@ bool vkManager::checkPhysicalDeviceExtensions(
   return foundAll;
 }
 
-vkManager::QSCreate
-vkManager::obtainPhysicalDeviceQueues(const vk::PhysicalDevice &device,
-                                      const std::vector<QFDesc> &qds) {
-  QSCreate qMap;
+vkManager::QueueCreate vkManager::obtainPhysicalDeviceQueues(
+    const vk::PhysicalDevice &device,
+    std::span<const QueueFamilyDescriptor> qds) {
+  QueueCreate qMap;
 
   const auto qf = device.getQueueFamilyProperties();
   spdlog::info("Found {} queue families", qf.size());
