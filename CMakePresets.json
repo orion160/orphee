@@ -40,8 +40,8 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       },
       "environment": {
-        "CFLAGS": "/fsanitize=address",
-        "CXXFLAGS": "/fsanitize=address"
+        "CFLAGS": "/fsanitize=address /W4",
+        "CXXFLAGS": "/fsanitize=address /W4"
       }
     }
   ]

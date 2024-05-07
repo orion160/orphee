@@ -1,72 +1,71 @@
 #pragma once
 
 #include <optional>
+#include <span>
+#include <string>
 
 #include <orphee/vulkan.hpp>
 
 namespace orphee {
-struct vkInit {
+struct Settings {
+  bool windowing = false;
+};
+
+struct Meta {
   std::string appName;
   uint32_t appVersionMajor;
   uint32_t appVersionMinor;
-  CharSet layers;
-  CharSet extensions;
 };
 
-/*
-SELECTOR API
-
-
-declaration
-template <typename S>
-concept Selector = requires(S f, "needed-info-arg") {
-  { f("needed-info-arg") } -> std::same_as<"?">;
+struct QueueFamilyRequirements {
+  std::string tag;
+  uint32_t count;
+  vk::QueueFlags capabilities;
+  std::optional<vk::SurfaceKHR> surface;
 };
 
-implementation
-
-R createXXX(Selector auto && s) {}
-*/
-
-class vkManager {
+struct vkManager {
 public:
-  vkManager(vkInit init);
+  vkManager(Settings s = {}, Meta m = {});
+
   vkManager(const vkManager &) = delete;
+
   vkManager(vkManager &&) noexcept = default;
+
   vkManager &operator=(const vkManager &) = delete;
+
   vkManager &operator=(vkManager &&) = default;
+
   ~vkManager();
 
-  // TODO: refactor into selector API
   [[nodiscard]] std::optional<Device>
-  createDevice(const DeviceRequirements &r) const;
+  createDevice(const QueueFamilyRequirements &reqs) const;
 
-  [[nodiscard]] static std::optional<uint32_t>
-  findMemoryType(std::span<vk::MemoryType> types, uint32_t typeFilter,
-                 vk::MemoryPropertyFlags properties);
+  Settings settings;
 
-  vkInit initInfo;
+  Meta meta;
+
   vk::raii::Context context;
+
   vk::raii::Instance instance;
 
 private:
-  using QueueCreate = std::unordered_map<uint32_t, std::vector<std::string>>;
-
-  [[nodiscard]] vk::raii::Instance createInstance();
+  vk::raii::Instance createInstance();
 
   [[nodiscard]] static bool checkInstanceVersion(uint32_t target,
                                                  uint32_t instance);
 
-  [[nodiscard]] bool checkInstanceLayers(const CharSet &layers) const;
+  [[nodiscard]] bool checkInstanceLayers(std::span<const char *> layers) const;
 
-  [[nodiscard]] bool checkInstanceExtensions(const CharSet &extensions) const;
+  [[nodiscard]] bool
+  checkInstanceExtensions(std::span<const char *> extensions) const;
 
   [[nodiscard]] static bool
-  checkPhysicalDeviceExtensions(const vk::raii::PhysicalDevice &device,
-                                const CharSet &extensions);
+  checkPhysicalDeviceExtensions(const vk::PhysicalDevice &device,
+                                std::span<const char *> extensions);
 
-  [[nodiscard]] static QueueCreate
-  obtainPhysicalDeviceQueues(const vk::PhysicalDevice &device,
-                             std::span<const QueueFamilyDescriptor> qds);
+  [[nodiscard]] static std::optional<uint32_t>
+  obtainQueueFamilies(const vk::PhysicalDevice &device,
+                      const QueueFamilyRequirements &r);
 };
 } // namespace orphee
