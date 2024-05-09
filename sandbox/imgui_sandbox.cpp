@@ -109,13 +109,12 @@ public:
     imguiVulkanInit.Queue = *Q->h;
     imguiVulkanInit.DescriptorPool = *imguiDescriptorPool;
     imguiVulkanInit.MinImageCount = minInageCount;
-    imguiVulkanInit.ImageCount = SC.images.size();
+    imguiVulkanInit.ImageCount = static_cast<uint32_t>(SC.images.size());
     imguiVulkanInit.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     imguiVulkanInit.UseDynamicRendering = true;
     imguiVulkanInit.PipelineRenderingCreateInfo = pipelineRenderingInfo;
     ImGui_ImplVulkan_Init(&imguiVulkanInit);
 
-    // draw setup
     CP = D.h.createCommandPool(
         {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, Q->fIdx});
 

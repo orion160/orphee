@@ -5,11 +5,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(sdl2 REQUIRED CONFIG)
 find_package(Vulkan REQUIRED)
-find_package(spdlog REQUIRED CONFIG)
 find_package(VulkanMemoryAllocator REQUIRED CONFIG)
+find_package(spdlog REQUIRED CONFIG)
 find_package(OpenEXR REQUIRED CONFIG)
+find_package(sdl2 REQUIRED CONFIG)
+find_package(glm REQUIRED CONFIG)
+find_package(pxr REQUIRED CONFIG)
 
 add_subdirectory(imgui)
 

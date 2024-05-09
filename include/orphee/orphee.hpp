@@ -34,7 +34,11 @@ const std::vector<const char *> ORPHEE_REQUIRED_VK_DEVICE_EXTENSIONS{
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
     VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
     VK_KHR_BIND_MEMORY_2_EXTENSION_NAME,
+    VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+    VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME,
+    VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+    VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME,
 };
 
 const std::vector<const char *> ORPHEE_REQUIRED_VK_DEVICE_WINDOWING_EXTENSIONS{
@@ -45,7 +49,12 @@ static vk::PhysicalDeviceFeatures2 getFeatures2() { return {}; }
 
 static vk::PhysicalDeviceVulkan11Features getFeaturesVK11() { return {}; }
 
-static vk::PhysicalDeviceVulkan12Features getFeaturesVK12() { return {}; }
+static vk::PhysicalDeviceVulkan12Features getFeaturesVK12() {
+  vk::PhysicalDeviceVulkan12Features f12{};
+  f12.setTimelineSemaphore(vk::True);
+  f12.setBufferDeviceAddress(vk::True);
+  return f12;
+}
 
 static vk::PhysicalDeviceVulkan13Features getFeaturesVK13() {
   vk::PhysicalDeviceVulkan13Features f13{};
@@ -57,7 +66,13 @@ static vk::PhysicalDeviceVulkan13Features getFeaturesVK13() {
 
 const vk::StructureChain<
     vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
-    vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features>
-    ORPHEE_REQUIRED_VK_DEVICE_FEATURES = {getFeatures2(), getFeaturesVK11(),
-                                          getFeaturesVK12(), getFeaturesVK13()};
+    vk::PhysicalDeviceVulkan12Features, vk::PhysicalDeviceVulkan13Features,
+    vk::PhysicalDeviceMemoryPriorityFeaturesEXT>
+    ORPHEE_REQUIRED_VK_DEVICE_FEATURES = {
+        getFeatures2(),
+        getFeaturesVK11(),
+        getFeaturesVK12(),
+        getFeaturesVK13(),
+        vk::PhysicalDeviceMemoryPriorityFeaturesEXT{vk::True},
+};
 } // namespace orphee

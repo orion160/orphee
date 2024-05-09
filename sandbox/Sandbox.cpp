@@ -9,7 +9,6 @@ class Sandbox {
 public:
   Sandbox(std::string appName, uint32_t iWidth, uint32_t iHeight)
       : mName{std::move(appName)} {
-
     // SDL
     SDL_Init(SDL_INIT_VIDEO);
     mWindow = SDL_CreateWindow(mName.c_str(), SDL_WINDOWPOS_UNDEFINED,
@@ -81,7 +80,6 @@ public:
     SC = orphee::Swapchain{swapchain, swapchainImages, swapchainImageViews,
                            swapchainFormat, swapchainExtent};
 
-    // draw setup
     CP = D.h.createCommandPool(
         {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, Q->fIdx});
 
