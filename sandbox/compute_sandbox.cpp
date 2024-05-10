@@ -40,7 +40,7 @@ public:
     /** CODE **/
     std::vector<uint32_t> code;
     {
-      std::filesystem::path file{"simple.spv"};
+      std::filesystem::path file{"compute.spv"};
       std::ifstream shader{file, std::ios::binary};
 
       const auto fileSize = std::filesystem::file_size(file);

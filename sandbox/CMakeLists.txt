@@ -42,3 +42,18 @@ add_custom_command(TARGET compute_sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:compute_sandbox> $<TARGET_FILE_DIR:compute_sandbox>
     COMMAND_EXPAND_LISTS
 )
+
+add_executable(graphics_sandbox)
+target_sources(graphics_sandbox
+    PRIVATE
+    graphics_sandbox.cpp
+)
+target_link_libraries(graphics_sandbox
+    PRIVATE
+    orphee_core SDL2::SDL2 SDL2::SDL2main
+)
+
+add_custom_command(TARGET graphics_sandbox POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:graphics_sandbox> $<TARGET_FILE_DIR:graphics_sandbox>
+    COMMAND_EXPAND_LISTS
+)
