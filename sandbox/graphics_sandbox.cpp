@@ -10,8 +10,7 @@
 
 class GraphicsSandbox {
 public:
-  GraphicsSandbox(std::string appName, uint32_t iWidth, uint32_t iHeight)
-      : mName{std::move(appName)} {
+  GraphicsSandbox(uint32_t iWidth, uint32_t iHeight) {
     // SDL
     SDL_Init(SDL_INIT_VIDEO);
     mWindow = SDL_CreateWindow(mName.c_str(), SDL_WINDOWPOS_UNDEFINED,
@@ -88,8 +87,7 @@ public:
     auto vertexCode = shader::load(std::filesystem::path{"vertex.spv"});
     auto vertexModule = D.h.createShaderModule({{}, vertexCode});
     /* fragment shader */
-    auto fragmentCode =
-        shader::load(std::filesystem::path{"fragment.spv"});
+    auto fragmentCode = shader::load(std::filesystem::path{"fragment.spv"});
     auto fragmentModule = D.h.createShaderModule({{}, fragmentCode});
     /* shader modules */
     std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages{
@@ -296,7 +294,7 @@ public:
 
 private:
   // App
-  std::string mName;
+  std::string mName{"Graphics Sandbox"};
   // SDL
   SDL_Window *mWindow;
   // Vulkan
@@ -319,7 +317,7 @@ private:
 
 int main(int argc, char **argv) {
   try {
-    GraphicsSandbox sandbox{"Sandbox", 1080U, 720U};
+    GraphicsSandbox sandbox{1080U, 720U};
     sandbox.run();
   } catch (const std::exception &e) {
     std::cout << e.what() << std::endl;

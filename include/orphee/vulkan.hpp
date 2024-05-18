@@ -196,6 +196,7 @@ struct Device {
       throw std::runtime_error("Failed to create buffer");
     }
 
+    b.size = info.size;
     b.allocator = this->allocator;
 
     return b;

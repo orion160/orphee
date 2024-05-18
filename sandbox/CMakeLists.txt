@@ -57,3 +57,21 @@ add_custom_command(TARGET graphics_sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:graphics_sandbox> $<TARGET_FILE_DIR:graphics_sandbox>
     COMMAND_EXPAND_LISTS
 )
+
+add_executable(mesh_sandbox)
+target_sources(mesh_sandbox
+    PRIVATE
+    mesh_sandbox.cpp
+)
+target_link_libraries(mesh_sandbox
+    PRIVATE
+    orphee_core SDL2::SDL2 SDL2::SDL2main usd usdGeom glm::glm
+)
+target_compile_definitions(mesh_sandbox PRIVATE NOMINMAX)
+
+# Problem adding OpenUSD dependencies to build path...
+# Just add the required directories to PATH
+#add_custom_command(TARGET mesh_sandbox POST_BUILD
+#    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:mesh_sandbox> $<TARGET_FILE_DIR:mesh_sandbox>
+#    COMMAND_EXPAND_LISTS
+#)

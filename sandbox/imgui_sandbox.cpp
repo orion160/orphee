@@ -10,8 +10,7 @@
 
 class ImGuiSandox {
 public:
-  ImGuiSandox(std::string appName, uint32_t iWidth, uint32_t iHeight)
-      : mName{std::move(appName)} {
+  ImGuiSandox(uint32_t iWidth, uint32_t iHeight) {
     // SDL
     SDL_Init(SDL_INIT_VIDEO);
     mWindow = SDL_CreateWindow(mName.c_str(), SDL_WINDOWPOS_UNDEFINED,
@@ -249,7 +248,7 @@ public:
 
 private:
   // App
-  std::string mName;
+  std::string mName{"ImGui Sandox"};
   // SDL
   SDL_Window *mWindow;
   // Vulkan
@@ -270,7 +269,7 @@ private:
 
 int main(int argc, char **argv) {
   try {
-    ImGuiSandox sandbox{"ImGui Sandox", 1080U, 720U};
+    ImGuiSandox sandbox{1080U, 720U};
     sandbox.run();
   } catch (const std::exception &e) {
     std::cout << e.what() << std::endl;
