@@ -1,5 +1,3 @@
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 
 #include <ImfArray.h>
@@ -7,10 +5,11 @@
 
 #include <orphee/orphee.hpp>
 
+#include "shader/util.hpp"
+
 class ComputeSandbox {
 public:
-  ComputeSandbox(uint32_t imageWidth, uint32_t imageHeight)
-      : imgExtent{imageWidth, imageHeight} {
+  ComputeSandbox(uint32_t imageWidth, uint32_t imageHeight) {
     // Vulkan
     VK = orphee::vkManager{{.windowing = false}};
 
@@ -38,18 +37,7 @@ public:
     timelineSemaphore = D.h.createSemaphore({{}, &semaphoreTypeInfo});
     // Compute pipeline
     /** CODE **/
-    std::vector<uint32_t> code;
-    {
-      std::filesystem::path file{"compute.spv"};
-      std::ifstream shader{file, std::ios::binary};
-
-      const auto fileSize = std::filesystem::file_size(file);
-      const size_t words = fileSize / sizeof(uint32_t);
-
-      code.resize(words);
-
-      shader.read(reinterpret_cast<char *>(code.data()), fileSize);
-    }
+    auto code = shader::load("compute.spv");
     auto computeModule = D.h.createShaderModule({{}, code});
     vk::PipelineShaderStageCreateInfo computeStageInfo{
         {}, vk::ShaderStageFlagBits::eCompute, computeModule, "main", {}};
@@ -79,7 +67,7 @@ public:
     vk::ImageCreateInfo imgInfo{{},
                                 vk::ImageType::e2D,
                                 vk::Format::eR16G16B16A16Sfloat,
-                                {imgExtent.width, imgExtent.height, 1},
+                                {imageWidth, imageHeight, 1},
                                 1,
                                 1,
                                 vk::SampleCountFlagBits::e1,
@@ -95,12 +83,8 @@ public:
 
     VmaAllocationCreateInfo imageAllocCreateInfo{};
     imageAllocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
-    vmaCreateImage(D.allocator, reinterpret_cast<VkImageCreateInfo *>(&imgInfo),
-                   &imageAllocCreateInfo, reinterpret_cast<VkImage *>(&img),
-                   &imgAlloc, nullptr);
 
-    VmaAllocationInfo allocInfo;
-    vmaGetAllocationInfo(D.allocator, imgAlloc, &allocInfo);
+    img = D.createImage(imgInfo, imageAllocCreateInfo);
 
     VmaAllocationCreateInfo bufferAllocCreateInfo{};
     bufferAllocCreateInfo.flags =
@@ -108,18 +92,16 @@ public:
     bufferAllocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
     vk::BufferCreateInfo bufferInfo{{},
-                                    allocInfo.size,
+                                    img.allocationInfo.size,
                                     vk::BufferUsageFlagBits::eTransferDst,
                                     vk::SharingMode::eExclusive,
                                     {}};
-    vmaCreateBuffer(
-        D.allocator, reinterpret_cast<VkBufferCreateInfo *>(&bufferInfo),
-        &bufferAllocCreateInfo, reinterpret_cast<VkBuffer *>(&imgBuffer),
-        &imgBufferAlloc, nullptr);
+
+    imgBuffer = D.createBuffer(bufferInfo, bufferAllocCreateInfo);
 
     imgView =
         D.h.createImageView({{},
-                             img,
+                             img.h,
                              vk::ImageViewType::e2D,
                              vk::Format::eR16G16B16A16Sfloat,
                              {},
@@ -140,11 +122,7 @@ public:
     D.h.updateDescriptorSets(writeDescriptor, {});
   }
 
-  ~ComputeSandbox() {
-    D.h.waitIdle();
-    vmaDestroyImage(D.allocator, img, imgAlloc);
-    vmaDestroyBuffer(D.allocator, imgBuffer, imgBufferAlloc);
-  }
+  ~ComputeSandbox() { D.h.waitIdle(); }
 
   void run() {
     CMD.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
@@ -154,22 +132,50 @@ public:
                            *computeDescriptorSet, {});
 
     vk::ImageMemoryBarrier2 toComputeBarrier{
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eMemoryWrite,
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+        vk::PipelineStageFlagBits2::eNone,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eShaderStorageWrite,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
         Q->fIdx,
         Q->fIdx,
-        img,
+        img.h,
         vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
                                   vk::RemainingMipLevels, 0,
                                   vk::RemainingArrayLayers}};
-    vk::DependencyInfo toPresentInfo{{}, {}, {}, toComputeBarrier};
-    CMD.pipelineBarrier2(toPresentInfo);
-    CMD.dispatch(std::ceil(imgExtent.width / 16.0),
-                 std::ceil(imgExtent.height / 16.0), 1);
+    vk::DependencyInfo toComputeInfo{{}, {}, {}, toComputeBarrier};
+    CMD.pipelineBarrier2(toComputeInfo);
+    CMD.dispatch(std::ceil(img.extent.width / 16.0),
+                 std::ceil(img.extent.height / 16.0), 1);
+
+    vk::ImageMemoryBarrier2 toCopyBarrierSrc{
+        vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eShaderStorageWrite,
+        vk::PipelineStageFlagBits2::eCopy,
+        vk::AccessFlagBits2::eTransferRead,
+        vk::ImageLayout::eGeneral,
+        vk::ImageLayout::eGeneral,
+        Q->fIdx,
+        Q->fIdx,
+        img.h,
+        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0,
+                                  vk::RemainingMipLevels, 0,
+                                  vk::RemainingArrayLayers}};
+
+    vk::BufferMemoryBarrier2 toCopyBarrierDst{
+        vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eCopy,
+        vk::AccessFlagBits2::eTransferWrite,
+        Q->fIdx,
+        Q->fIdx,
+        imgBuffer.h,
+        0,
+        vk::WholeSize};
+
+    vk::DependencyInfo toCopyInfo{{}, {}, toCopyBarrierDst, toCopyBarrierSrc};
+    CMD.pipelineBarrier2(toCopyInfo);
 
     vk::BufferImageCopy2 copyRegion{
         0,
@@ -177,10 +183,10 @@ public:
         0,
         vk::ImageSubresourceLayers{vk::ImageAspectFlagBits::eColor, 0, 0, 1},
         {0, 0, 0},
-        {imgExtent.width, imgExtent.height, 1}};
+        {img.extent.width, img.extent.height, 1}};
 
-    vk::CopyImageToBufferInfo2 copyImageToBuffer{img, vk::ImageLayout::eGeneral,
-                                                 imgBuffer, copyRegion};
+    vk::CopyImageToBufferInfo2 copyImageToBuffer{
+        img.h, vk::ImageLayout::eGeneral, imgBuffer.h, copyRegion};
     CMD.copyImageToBuffer2(copyImageToBuffer);
     CMD.end();
 
@@ -196,19 +202,16 @@ public:
       throw std::runtime_error("Failed to wait for semaphore");
     }
 
-    VmaAllocationInfo allocInfo;
-    vmaGetAllocationInfo(D.allocator, imgBufferAlloc, &allocInfo);
+    auto pixels = std::make_unique<char[]>(imgBuffer.allocationInfo.size);
 
-    auto pixels = std::make_unique<char[]>(allocInfo.size);
+    vmaCopyAllocationToMemory(D.allocator, imgBuffer.allocation, 0,
+                              pixels.get(), imgBuffer.allocationInfo.size);
 
-    vmaCopyAllocationToMemory(D.allocator, imgBufferAlloc, allocInfo.offset,
-                              pixels.get(), allocInfo.size);
-
-    Imf::RgbaOutputFile file("out.exr", imgExtent.width, imgExtent.height,
+    Imf::RgbaOutputFile file("out.exr", img.extent.width, img.extent.height,
                              Imf::WRITE_RGBA);
     file.setFrameBuffer(reinterpret_cast<Imf::Rgba *>(pixels.get()), 1,
-                        imgExtent.width);
-    file.writePixels(imgExtent.height);
+                        img.extent.width);
+    file.writePixels(img.extent.height);
   }
 
 private:
@@ -228,12 +231,9 @@ private:
   vk::raii::DescriptorPool descriptorPool{nullptr};
   vk::raii::DescriptorSet computeDescriptorSet{nullptr};
   /* Compute RT */
-  vk::Image img;
-  vk::Extent2D imgExtent;
+  orphee::vmaImage img{nullptr};
   vk::raii::ImageView imgView{nullptr};
-  VmaAllocation imgAlloc;
-  vk::Buffer imgBuffer;
-  VmaAllocation imgBufferAlloc;
+  orphee::vmaBuffer imgBuffer{nullptr};
 };
 
 int main(int argc, char **argv) {

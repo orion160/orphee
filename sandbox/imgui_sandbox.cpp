@@ -61,7 +61,7 @@ public:
         vk::SurfaceTransformFlagBitsKHR::eIdentity,
         vk::CompositeAlphaFlagBitsKHR::eOpaque,
         vk::PresentModeKHR::eFifo,
-        VK_TRUE,
+        vk::True,
         nullptr};
 
     auto swapchain = D.h.createSwapchainKHR(swapchainInfo);
@@ -175,10 +175,10 @@ public:
       CMD.begin(beginInfo);
 
       vk::ImageMemoryBarrier2 toWriteBarrier{
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite,
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+          vk::PipelineStageFlagBits2::eNone,
+          vk::AccessFlagBits2::eNone,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
           vk::ImageLayout::eUndefined,
           vk::ImageLayout::eColorAttachmentOptimal,
           Q->fIdx,
@@ -213,10 +213,10 @@ public:
       CMD.endRendering();
 
       vk::ImageMemoryBarrier2 toPresentBarrier{
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite,
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          vk::PipelineStageFlagBits2::eNone,
+          vk::AccessFlagBits2::eNone,
           vk::ImageLayout::eColorAttachmentOptimal,
           vk::ImageLayout::ePresentSrcKHR,
           Q->fIdx,

@@ -1,5 +1,4 @@
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 
 #include <SDL.h>
@@ -7,9 +6,11 @@
 
 #include <orphee/orphee.hpp>
 
-class Sandbox {
+#include "shader/util.hpp"
+
+class GraphicsSandbox {
 public:
-  Sandbox(std::string appName, uint32_t iWidth, uint32_t iHeight)
+  GraphicsSandbox(std::string appName, uint32_t iWidth, uint32_t iHeight)
       : mName{std::move(appName)} {
     // SDL
     SDL_Init(SDL_INIT_VIDEO);
@@ -60,7 +61,7 @@ public:
         vk::SurfaceTransformFlagBitsKHR::eIdentity,
         vk::CompositeAlphaFlagBitsKHR::eOpaque,
         vk::PresentModeKHR::eFifo,
-        VK_TRUE,
+        vk::True,
         nullptr};
 
     auto swapchain = D.h.createSwapchainKHR(swapchainInfo);
@@ -82,34 +83,13 @@ public:
     SC = orphee::Swapchain{swapchain, swapchainImages, swapchainImageViews,
                            swapchainFormat, swapchainExtent};
 
-    /** Graphics**/
+    /** Graphics **/
     /* vertex shader */
-    std::vector<uint32_t> vertexCode;
-    {
-      std::filesystem::path file{"vertex.spv"};
-      std::ifstream shader{file, std::ios::binary};
-
-      const auto fileSize = std::filesystem::file_size(file);
-      const size_t words = fileSize / sizeof(uint32_t);
-
-      vertexCode.resize(words);
-
-      shader.read(reinterpret_cast<char *>(vertexCode.data()), fileSize);
-    }
+    auto vertexCode = shader::load(std::filesystem::path{"vertex.spv"});
     auto vertexModule = D.h.createShaderModule({{}, vertexCode});
     /* fragment shader */
-    std::vector<uint32_t> fragmentCode;
-    {
-      std::filesystem::path file{"fragment.spv"};
-      std::ifstream shader{file, std::ios::binary};
-
-      const auto fileSize = std::filesystem::file_size(file);
-      const size_t words = fileSize / sizeof(uint32_t);
-
-      fragmentCode.resize(words);
-
-      shader.read(reinterpret_cast<char *>(fragmentCode.data()), fileSize);
-    }
+    auto fragmentCode =
+        shader::load(std::filesystem::path{"fragment.spv"});
     auto fragmentModule = D.h.createShaderModule({{}, fragmentCode});
     /* shader modules */
     std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages{
@@ -198,7 +178,7 @@ public:
     RenderFinished = D.h.createSemaphore({});
   }
 
-  ~Sandbox() {
+  ~GraphicsSandbox() {
     D.h.waitIdle();
     // SDL
     SDL_DestroyWindow(mWindow);
@@ -232,10 +212,10 @@ public:
       CMD.begin(beginInfo);
 
       vk::ImageMemoryBarrier2 toWriteBarrier{
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite,
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+          vk::PipelineStageFlagBits2::eNone,
+          vk::AccessFlagBits2::eNone,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
           vk::ImageLayout::eUndefined,
           vk::ImageLayout::eColorAttachmentOptimal,
           Q->fIdx,
@@ -280,10 +260,10 @@ public:
       CMD.endRendering();
 
       vk::ImageMemoryBarrier2 toPresentBarrier{
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite,
-          vk::PipelineStageFlagBits2::eAllCommands,
-          vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eMemoryRead,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          vk::PipelineStageFlagBits2::eNone,
+          vk::AccessFlagBits2::eNone,
           vk::ImageLayout::eColorAttachmentOptimal,
           vk::ImageLayout::ePresentSrcKHR,
           Q->fIdx,
@@ -339,7 +319,7 @@ private:
 
 int main(int argc, char **argv) {
   try {
-    Sandbox sandbox{"Sandbox", 1080U, 720U};
+    GraphicsSandbox sandbox{"Sandbox", 1080U, 720U};
     sandbox.run();
   } catch (const std::exception &e) {
     std::cout << e.what() << std::endl;
