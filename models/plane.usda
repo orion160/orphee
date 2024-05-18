@@ -1,0 +1,16 @@
+#usda 1.0
+(
+    defaultPrim = "root"
+)
+
+def Xform "root" ()
+{
+    def Xform "Pane"
+    {
+        def Mesh "Plane"
+        {
+            int[] faceVertexIndices = [0, 1, 2, 2, 3, 0]
+            point3f[] points = [(-0.5, -0.5, 0.0), (0.5, -0.5, 0.0), (0.5, 0.5, 0.0), (-0.5, 0.5, 0.0)]
+        }
+    }
+}
