@@ -28,7 +28,6 @@ add_custom_command(TARGET imgui_sandbox POST_BUILD
     COMMAND_EXPAND_LISTS
 )
 
-
 add_executable(compute_sandbox)
 target_sources(compute_sandbox
     PRIVATE
@@ -75,3 +74,18 @@ target_compile_definitions(mesh_sandbox PRIVATE NOMINMAX)
 #    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:mesh_sandbox> $<TARGET_FILE_DIR:mesh_sandbox>
 #    COMMAND_EXPAND_LISTS
 #)
+
+add_executable(heat_transfer)
+target_sources(heat_transfer
+    PRIVATE
+    heat_transfer.cpp
+)
+target_link_libraries(heat_transfer
+    PRIVATE
+    orphee_core orphee_imgui SDL2::SDL2 SDL2::SDL2main
+)
+
+add_custom_command(TARGET heat_transfer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:heat_transfer> $<TARGET_FILE_DIR:heat_transfer>
+    COMMAND_EXPAND_LISTS
+)
